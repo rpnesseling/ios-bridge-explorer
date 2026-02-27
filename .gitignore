@@ -1,0 +1,9 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Local third-party runtime staging (user-supplied)
+native/third_party/
+
+# Do not track redistributed runtime binaries
+wpf/runtimes/win-x64/native/*.dll
