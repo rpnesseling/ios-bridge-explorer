@@ -3,7 +3,8 @@ param(
     [string]$SourceDir = "$PSScriptRoot\..\native\third_party\libimobiledevice\bin",
     [switch]$SkipNativeBuild,
     [switch]$SkipRuntimeSetup,
-    [switch]$SkipWpfBuild
+    [switch]$SkipWpfBuild,
+    [switch]$AllowMissingRuntime
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +28,35 @@ function Test-RequiredRuntimeDlls {
     }
 
     return $missing
+}
+
+function Import-MsvcEnvironment {
+    $vswherePath = Join-Path "${env:ProgramFiles(x86)}" "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswherePath)) {
+        return $false
+    }
+
+    $installationPath = & $vswherePath -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ([string]::IsNullOrWhiteSpace($installationPath)) {
+        return $false
+    }
+
+    $vsDevCmd = Join-Path $installationPath "Common7\Tools\VsDevCmd.bat"
+    if (-not (Test-Path $vsDevCmd)) {
+        return $false
+    }
+
+    $lines = & cmd.exe /c "`"$vsDevCmd`" -arch=x64 >nul && set"
+    foreach ($line in $lines) {
+        $idx = $line.IndexOf('=')
+        if ($idx -gt 0) {
+            $name = $line.Substring(0, $idx)
+            $value = $line.Substring($idx + 1)
+            Set-Item -Path ("Env:" + $name) -Value $value
+        }
+    }
+
+    return (Test-CommandAvailable -Name "cl")
 }
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -53,7 +83,13 @@ elseif (-not $SkipWpfBuild) {
 }
 
 if (-not $SkipNativeBuild -and -not (Test-CommandAvailable -Name "cl")) {
-    $errors += "Missing MSVC compiler: 'cl' command not found. Run this script from Developer PowerShell for Visual Studio 2022 with C++ tools."
+    Write-Host "MSVC not on PATH. Attempting to load Visual Studio build tools environment..."
+    if (Import-MsvcEnvironment) {
+        Write-Host "MSVC environment loaded successfully."
+    }
+    else {
+        $errors += "Missing MSVC compiler: 'cl' command not found. Could not auto-load VsDevCmd. Run this script from Developer PowerShell for Visual Studio 2022 with C++ tools."
+    }
 }
 
 if ($errors.Count -gt 0) {
@@ -99,16 +135,25 @@ else {
 
 $missingRuntime = Test-RequiredRuntimeDlls -RuntimeDir $runtimeDir -RequiredDlls $requiredRuntimeDlls
 if ($missingRuntime.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Runtime validation failed. Missing required DLLs:"
-    foreach ($dll in $missingRuntime) {
-        Write-Host "  - $dll"
+    if ($AllowMissingRuntime) {
+        Write-Warning "Required runtime DLLs are missing, but continuing because -AllowMissingRuntime was specified."
+        foreach ($dll in $missingRuntime) {
+            Write-Warning "  missing: $dll"
+        }
     }
-    Write-Host ""
-    Write-Host "Fix:"
-    Write-Host "  1) Put required DLLs in: $SourceDir"
-    Write-Host "  2) Re-run: .\scripts\bootstrap.ps1"
-    throw "Missing required runtime DLLs."
+    else {
+        Write-Host ""
+        Write-Host "Runtime validation failed. Missing required DLLs:"
+        foreach ($dll in $missingRuntime) {
+            Write-Host "  - $dll"
+        }
+        Write-Host ""
+        Write-Host "Fix:"
+        Write-Host "  1) Put required DLLs in: $SourceDir"
+        Write-Host "  2) Re-run: .\scripts\bootstrap.ps1"
+        Write-Host "  3) Or run compile-only mode: .\scripts\bootstrap.ps1 -AllowMissingRuntime"
+        throw "Missing required runtime DLLs."
+    }
 }
 
 if (-not $SkipWpfBuild) {

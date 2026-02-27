@@ -66,6 +66,7 @@ Run a single setup/build flow with clear prerequisite checks:
 What it does:
 
 - checks for required tooling (`dotnet`, and `cl` unless native build is skipped)
+- auto-loads Visual Studio build tools environment when possible if `cl` is not already on `PATH`
 - builds native bridge
 - copies/validates user-supplied `libimobiledevice` runtime DLLs
 - builds the WPF app
@@ -76,6 +77,7 @@ Optional switches:
 - `-SkipRuntimeSetup`
 - `-SkipWpfBuild`
 - `-SourceDir <path-to-user-supplied-dlls>`
+- `-AllowMissingRuntime` (compile/build workflow even when runtime DLLs are not yet installed)
 
 ## Build and Run WPF App
 
